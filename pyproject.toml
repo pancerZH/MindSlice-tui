@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mindslice-tui"
+version = "0.1.0"
+description = "Read-only terminal UI for browsing MindSlice cards, slices and their relations."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "pancerZH" }]
+requires-python = ">=3.12"
+dependencies = ["mindslice>=0.1.6", "textual>=1.0"]
+
+[project.scripts]
+mindslice-tui = "mindslice_tui.__main__:main"
+
+[tool.setuptools]
+packages = ["mindslice_tui"]
+
+[tool.setuptools.package-data]
+mindslice_tui = ["*.tcss"]

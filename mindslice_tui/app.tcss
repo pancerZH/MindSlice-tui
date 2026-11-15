@@ -1,0 +1,51 @@
+#slices, #card, #relations {
+    border: round $primary-darken-1;
+    border-title-color: $text;
+}
+
+#slices:focus, #relations:focus, #card:focus-within {
+    border: round $accent;
+}
+
+#slices {
+    width: 34;
+}
+
+#card {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#relations {
+    width: 44;
+}
+
+#card-meta {
+    border-bottom: solid $primary-darken-1;
+    margin-bottom: 1;
+}
+
+Markdown {
+    padding: 0;
+}
+
+ModalScreen {
+    align: center middle;
+}
+
+.dialog {
+    width: 90%;
+    height: 85%;
+    border: round $accent;
+    background: $surface;
+    padding: 0 1;
+}
+
+.dialog OptionList {
+    height: 1fr;
+    border: none;
+}
+
+#search-note {
+    color: $text-muted;
+}
