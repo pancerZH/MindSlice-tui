@@ -18,7 +18,7 @@ class StoreTest(unittest.TestCase):
         self.snapshot = self.store.load()
 
     def relations(self, address: str) -> dict[str, list[str]]:
-        return {label.split(" ", 1)[1]: targets for label, targets in self.snapshot.relations(address)}
+        return dict(self.snapshot.relations(address))
 
     def test_cards_and_mounts(self) -> None:
         self.assertEqual([m.alias for m in self.snapshot.mounts], ["@overlay", "@base"])
@@ -30,27 +30,27 @@ class StoreTest(unittest.TestCase):
 
     def test_links_and_dangling(self) -> None:
         alpha = self.relations("@overlay/notes/alpha")
-        self.assertEqual(alpha["links out"], ["@overlay/notes/beta"])
+        self.assertEqual(alpha["links_out"], ["@overlay/notes/beta"])
         self.assertEqual(self.snapshot.dangling("@overlay/notes/alpha")[0].raw, "missing/card")
         self.assertEqual(self.relations("@overlay/notes/beta")["backlinks"], ["@overlay/notes/alpha"])
 
     def test_lineage(self) -> None:
         old = self.relations("@overlay/notes/old")
-        self.assertEqual(old["superseded by"], ["@overlay/notes/new"])
-        self.assertEqual(old["extended by"], ["@overlay/notes/ext"])
+        self.assertEqual(old["superseded_by"], ["@overlay/notes/new"])
+        self.assertEqual(old["extended_by"], ["@overlay/notes/ext"])
         self.assertEqual(self.relations("@overlay/notes/new")["supersedes"], ["@overlay/notes/old"])
         self.assertEqual(self.relations("@overlay/notes/ext")["extends"], ["@overlay/notes/old"])
         self.assertTrue(self.snapshot.is_superseded("@overlay/notes/old"))
         self.assertFalse(self.snapshot.is_superseded("@overlay/notes/new"))
 
     def test_shadows(self) -> None:
-        self.assertEqual(self.relations("@overlay/team/lead")["same path"], ["@base/team/lead"])
+        self.assertEqual(self.relations("@overlay/team/lead")["same_path"], ["@base/team/lead"])
         self.assertEqual(self.snapshot.shadowed, {"@base/team/lead"})
 
     def test_issues(self) -> None:
         issues = {(kind, address) for kind, address, _ in self.snapshot.issues()}
         self.assertIn(("warning", "@overlay/notes/alpha"), issues)  # the engine reports the broken link
-        self.assertIn(("stale extends", "@overlay/notes/ext"), issues)
+        self.assertIn(("stale_extends", "@overlay/notes/ext"), issues)
         self.assertIn(("supersedes", "@overlay/notes/new"), issues)
         self.assertIn(("shadowed", "@base/team/lead"), issues)
         self.assertIn(("orphan", "@overlay/notes/lone"), issues)
@@ -68,7 +68,7 @@ class StoreTest(unittest.TestCase):
                 relations = self.relations(address)
                 links = [link["address"] for link in read.get("links", []) if link.get("address")]
                 backlinks = [link["address"] for link in read.get("backlinks", [])]
-                self.assertEqual(sorted(relations["links out"]), sorted(set(links)), address)
+                self.assertEqual(sorted(relations["links_out"]), sorted(set(links)), address)
                 self.assertEqual(sorted(relations["backlinks"]), sorted(backlinks), address)
 
     def test_search_history_pending(self) -> None:

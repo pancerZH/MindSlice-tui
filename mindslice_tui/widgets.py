@@ -10,6 +10,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import DataTable, Markdown, Static, Tree
 
+from .i18n import t
 from .store import Snapshot
 
 
@@ -88,26 +89,26 @@ class CardView(VerticalScroll):
         yield Static(id="card-meta")
         yield Markdown(open_links=False)
 
-    def show(self, snapshot: Snapshot, address: str, markdown: str) -> None:
+    def show(self, snapshot: Snapshot, address: str, markdown: str | None) -> None:
         card = snapshot.cards[address]
         meta = Text.assemble((card.title, "bold"), "\n", (address, "cyan"))
         if card.always:
-            meta.append("  ★ always loaded", style="yellow")
+            meta.append(f"  ★ {t('always_loaded')}", style="yellow")
         if snapshot.is_superseded(address):
-            meta.append("  superseded", style="red")
+            meta.append(f"  {t('superseded')}", style="red")
         if address in snapshot.shadowed:
-            meta.append("  shadowed", style="red")
+            meta.append(f"  {t('shadowed')}", style="red")
         if card.tags:
-            meta.append(f"\ntags: {', '.join(card.tags)}")
+            meta.append("\n" + t("tags", tags=", ".join(card.tags)))
         if card.aliases:
-            meta.append(f"\naliases: {', '.join(card.aliases)}", style="dim")
+            meta.append("\n" + t("aliases", aliases=", ".join(card.aliases)), style="dim")
         modified = datetime.fromtimestamp(card.mtime_ns / 1e9).strftime("%Y-%m-%d %H:%M")
         file = str(card.file).replace(str(Path.home()), "~", 1)
-        meta.append(f"\nmodified {modified} · read {card.read_count}×\n{file}", style="dim")
+        meta.append(f"\n{t('modified', time=modified, count=card.read_count)}\n{file}", style="dim")
         for problem in card.problems:
             meta.append(f"\n! {problem}", style="red")
         self.query_one("#card-meta", Static).update(meta)
-        self.query_one(Markdown).update(markdown)
+        self.query_one(Markdown).update(t("file_gone") if markdown is None else markdown)
         self.scroll_home(animate=False)
 
     def on_markdown_link_clicked(self, event: Markdown.LinkClicked) -> None:
@@ -134,20 +135,20 @@ class RelationsPanel(Vertical):
         tree = self.query_one(Tree)
         tree.clear()
 
-        def group(label: str, count: int):
-            return tree.root.add(Text(f"{label} ({count})", style="bold" if count else "dim"),
+        def group(name: str, count: int):
+            return tree.root.add(Text(f"{t(name)} ({count})", style="bold" if count else "dim"),
                                  expand=True, allow_expand=bool(count))
 
         here = snapshot.cards[address].mount
-        for label, targets in snapshot.relations(address):
-            node = group(label, len(targets))
+        for name, targets in snapshot.relations(address):
+            node = group(name, len(targets))
             for target in targets:
                 # Name first, folder after: the part that tells neighbours apart survives a narrow pane.
                 # The mount is named only when it differs from the focus card's.
                 folder, _, name = target.removeprefix(f"{here}/").rpartition("/")
                 node.add_leaf(card_label(snapshot, target, name).append(f"  {folder}", style="dim"), data=target)
         dangling = snapshot.dangling(address)
-        node = group("✗ dangling", len(dangling))
+        node = group("dangling", len(dangling))
         for edge in dangling:
             node.add_leaf(Text.assemble((edge.raw, "red"), (f"  {edge.kind}", "dim")))
         self.query_one("#preview", Static).update("")

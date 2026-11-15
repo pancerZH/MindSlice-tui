@@ -5,6 +5,7 @@ from pathlib import Path
 
 from textual.widgets import Markdown, TabbedContent
 
+from mindslice_tui import i18n
 from mindslice_tui.app import MindSliceApp
 from mindslice_tui.screens import HistoryScreen, NeighborsScreen, OverviewScreen, SearchScreen
 from mindslice_tui.store import Store
@@ -18,6 +19,7 @@ ALPHA, BETA = "@overlay/notes/alpha", "@overlay/notes/beta"
 
 class AppTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
+        i18n.use("en")
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = build(Path(tmp.name))
@@ -81,7 +83,7 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
             await pilot.press("slash", *"zebras")
             await pilot.pause(0.3)  # the search runs once typing pauses
             self.assertIsInstance(self.app.screen, SearchScreen)
-            self.assertIn("1 条结果", screen_text(self.app))
+            self.assertIn("1 found", screen_text(self.app))
             await pilot.press("enter", "enter")
             await pilot.pause()
             self.assertEqual(self.app.address, BETA)
@@ -181,6 +183,27 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
             await pilot.press("r")
             await pilot.pause()
             self.assertEqual(self.app.address, ALPHA)
+
+    async def test_language_key_switches_english_and_chinese(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            text = screen_text(self.app)
+            for english in ("Search", "Relations", "→ links out (1)", "modified "):
+                self.assertIn(english, text)
+            await pilot.press("l")
+            await pilot.pause()
+            text = screen_text(self.app)
+            for chinese in ("搜索", "关系", "→ 出链 (1)", "修改于 ", "English"):
+                self.assertIn(chinese, text)
+            self.assertNotIn("Search", text)
+            self.assertEqual(self.app.address, ALPHA)  # same card, no history entry
+            self.assertEqual(self.app.trail, [])
+            await pilot.press("o")
+            await pilot.pause()
+            self.assertIn("待审变更（1）", screen_text(self.app))
+            await pilot.press("escape", "l")
+            await pilot.pause()
+            self.assertIn("Search", screen_text(self.app))
 
     async def test_a_session_writes_no_memory(self) -> None:
         before = memory_digest(self.root)

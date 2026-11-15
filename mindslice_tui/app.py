@@ -9,6 +9,8 @@ from textual.widgets import Footer
 
 from mindslice import MindSliceError
 
+from . import i18n
+from .i18n import t
 from .screens import HistoryScreen, NeighborsScreen, OverviewScreen, SearchScreen
 from .store import Store
 from .widgets import CardChosen, CardView, RelationsPanel, SliceTree
@@ -17,15 +19,9 @@ from .widgets import CardChosen, CardView, RelationsPanel, SliceTree
 class MindSliceApp(App):
     CSS_PATH = "app.tcss"
     TITLE = "MindSlice"
-    BINDINGS = [
-        Binding("slash", "search", "搜索", key_display="/"),
-        Binding("g", "neighbors", "邻居树"),
-        Binding("o", "overview", "概览"),
-        Binding("h", "history", "历史"),
-        Binding("r", "refresh", "刷新"),
-        Binding("backspace", "back", "回退"),
-        Binding("q", "quit", "退出"),
-    ]
+    # (key, action, key shown in the footer). The label is t(action), set in relabel().
+    KEYS = (("slash", "search", "/"), ("g", "neighbors", None), ("o", "overview", None), ("h", "history", None),
+            ("r", "refresh", None), ("backspace", "back", None), ("l", "language", None), ("q", "quit", None))
 
     def __init__(self, store: Store) -> None:
         super().__init__()
@@ -42,13 +38,26 @@ class MindSliceApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#slices").border_title = "Slices"
-        self.query_one("#card").border_title = "Card"
-        self.query_one("#relations").border_title = "Relations"
+        self.relabel()
         tree = self.query_one(SliceTree)
         tree.load(self.snapshot)
         tree.focus()
         self.show(tree.first_card(), remember=False)
+
+    def relabel(self) -> None:
+        """Put the current language on the key hints and pane titles."""
+        for key, action, display in self.KEYS:
+            # Textual cannot relabel a binding, so swap it where the footer reads bindings from.
+            self._bindings.key_to_bindings[key] = [Binding(key, action, t(action), key_display=display)]
+        self.refresh_bindings()
+        for pane in ("slices", "card", "relations"):
+            self.query_one(f"#{pane}").border_title = t(pane)
+
+    def action_language(self) -> None:
+        i18n.switch()
+        self.relabel()
+        address, self.address = self.address, None  # draw the focus card again, in the new language
+        self.show(address, jump=False)
 
     def show(self, address: str | None, jump: bool = True, remember: bool = True) -> None:
         """Make ``address`` the focus card. A jump moves the tree cursor and, unless told otherwise,
@@ -84,7 +93,7 @@ class MindSliceApp(App):
         try:
             self.snapshot = self.store.load()
         except MindSliceError as error:
-            self.notify(str(error), title="刷新失败，仍显示旧内容", severity="error", markup=False)
+            self.notify(str(error), title=t("refresh_failed"), severity="error", markup=False)
             return
         tree = self.query_one(SliceTree)
         tree.load(self.snapshot)
@@ -92,7 +101,7 @@ class MindSliceApp(App):
         address = self.address if self.address in self.snapshot.cards else tree.first_card()
         self.address = None
         self.show(address, remember=False)
-        self.notify(f"{len(self.snapshot.cards)} cards", title="已刷新")
+        self.notify(t("card_count", count=len(self.snapshot.cards)), title=t("refreshed"))
 
     def action_search(self) -> None:
         self.push_screen(SearchScreen(self.store), self.open)

@@ -8,6 +8,7 @@ import sys
 
 from mindslice import MindSliceError
 
+from . import i18n
 from .app import MindSliceApp
 from .store import Store
 
@@ -16,7 +17,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="mindslice-tui", description=__doc__)
     parser.add_argument("-w", "--workspace", default=os.environ.get("MINDSLICE_WORKSPACE"),
                         help="workspace root (default: $MINDSLICE_WORKSPACE or nearest dir with mounts.toml)")
+    parser.add_argument("--lang", choices=i18n.LANGUAGES, default=i18n.LANGUAGES[0],
+                        help="language of the interface at start (the L key switches it)")
     args = parser.parse_args()
+    i18n.use(args.lang)
     try:
         store = Store(args.workspace)
         app = MindSliceApp(store)  # loads the workspace

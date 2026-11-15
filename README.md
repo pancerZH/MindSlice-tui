@@ -42,12 +42,13 @@ The workspace is found the same way the `mindslice` command finds it: `-w`, othe
 | `o` | Overview: status and pending review, issues, change history, always-loaded cards. The full text of the selected row is shown under each table; `enter` jumps to that row's card |
 | `h` | Change history of the current card |
 | `r` | Reload the workspace |
+| `l` | Switch the interface language (English / 中文) |
 | `q` | Quit |
 
 Markers in the tree: `★` an always-loaded card (`load = "always"`), `!` the card has parse problems, `≡` the card is shadowed by a card at the same path in a higher-precedence mount; a dimmed, struck-out name means the card has been superseded.
 If a reload with `r` fails (for example while `mounts.toml` is half written), the UI keeps what it was showing and reports the error.
 
-The key hints at the bottom of the screen and the dialog titles are in Chinese.
+The interface starts in English; `--lang zh` starts it in Chinese. Only the interface's own text is translated: card content and the engine's messages are shown as they are.
 
 ## Read-only
 

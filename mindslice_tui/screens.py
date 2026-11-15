@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from rich.cells import cell_len
 from rich.markup import escape
 from rich.text import Text
 from textual.containers import Vertical, VerticalScroll
@@ -9,14 +10,17 @@ from textual.screen import ModalScreen
 from textual.widgets import DataTable, Input, OptionList, Static, TabbedContent, TabPane, Tree
 from textual.widgets.option_list import Option
 
+from .i18n import t
 from .store import EDGE_GROUPS, Snapshot, Store
 from .widgets import Table, card_label, history_rows
 
-HISTORY_COLUMNS = ("time", "change", "card", "reason")
+
+def history_columns() -> list[str]:
+    return [t(f"col_{name}") for name in ("time", "change", "card", "reason")]
 
 
 class Modal(ModalScreen[str | None]):
-    BINDINGS = [("escape", "dismiss(None)", "关闭")]
+    BINDINGS = [("escape", "dismiss(None)", "Close")]
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         address = Table.address_of(event)
@@ -34,8 +38,8 @@ class SearchScreen(Modal):
 
     def compose(self):
         with Vertical(classes="dialog") as dialog:
-            dialog.border_title = "搜索"
-            yield Input(placeholder="输入关键词，回车进入结果列表")
+            dialog.border_title = t("search")
+            yield Input(placeholder=t("search_placeholder"))
             yield OptionList()
             yield Static(id="search-note")
 
@@ -55,9 +59,9 @@ class SearchScreen(Modal):
                 text = Text.assemble((hit["title"], "bold"), "  ", (hit["address"], "cyan"),
                                      (f"  {hit['coverage']:.0%}\n", "dim"), (hit["summary"], "dim"))
                 results.add_options([Option(text, id=hit["address"]), None])  # None draws a separator
-            note = f"{found['total_matches']} 条结果"
+            note = t("search_found", count=found["total_matches"])
             if found["unmatched_terms"]:
-                note += f" · 未匹配的词: {', '.join(found['unmatched_terms'])}"
+                note += " · " + t("search_unmatched", terms=", ".join(found["unmatched_terms"]))
         self.query_one("#search-note", Static).update(note)
 
     def on_input_submitted(self) -> None:
@@ -82,8 +86,8 @@ class NeighborsScreen(Modal):
         tree = Tree(card_label(self.snapshot, self.address, self.snapshot.cards[self.address].title),
                     data=self.address, classes="dialog")
         tree.auto_expand = False  # enter jumps; space opens a node
-        tree.border_title = "邻居树"
-        tree.border_subtitle = "space 展开 · enter 跳转 · esc 关闭"
+        tree.border_title = t("neighbors")
+        tree.border_subtitle = t("neighbor_hint")
         yield tree
 
     def on_mount(self) -> None:
@@ -98,11 +102,12 @@ class NeighborsScreen(Modal):
         while walker is not None:
             path.add(walker.data)
             walker = walker.parent
-        width = max(len(label) for label, _, _ in EDGE_GROUPS)
-        for label, kind, direction in EDGE_GROUPS:
+        width = max(cell_len(t(name)) for name, _, _ in EDGE_GROUPS)  # cells, not characters: CJK is double width
+        for name, kind, direction in EDGE_GROUPS:
+            label = t(name) + " " * (width - cell_len(t(name)) + 2)
             for neighbor in self.snapshot.neighbors(node.data, kind, direction):
                 text = card_label(self.snapshot, neighbor, self.snapshot.cards[neighbor].title)
-                text = Text.assemble((f"{label:<{width}}  ", "dim"), text)
+                text = Text.assemble((label, "dim"), text)
                 if neighbor in path:  # a leaf has no toggle arrow: pad so the columns still line up
                     node.add_leaf(Text.assemble("  ", text, ("  ↺", "dim")), data=neighbor)
                 else:
@@ -123,8 +128,8 @@ class HistoryScreen(Modal):
         self.address = address
 
     def compose(self):
-        table = Table(*HISTORY_COLUMNS, classes="dialog")
-        table.border_title = escape(f"历史 · {self.address}")
+        table = Table(*history_columns(), classes="dialog")
+        table.border_title = escape(f"{t('history')} · {self.address}")
         table.fill(history_rows(self.events))
         yield table
 
@@ -140,51 +145,58 @@ class OverviewScreen(Modal):
     def compose(self):
         snapshot = self.snapshot
         with TabbedContent(classes="dialog") as tabs:
-            tabs.border_title = escape(f"概览 · {snapshot.root}")
-            with TabPane("状态", id="status"):
+            tabs.border_title = escape(f"{t('overview')} · {snapshot.root}")
+            with TabPane(t("tab_status"), id="status"):
                 yield VerticalScroll(Static(self.status_text()))
-            with TabPane("问题", id="issues"):
+            with TabPane(t("tab_issues"), id="issues"):
                 issues = snapshot.issues()
-                table = Table("kind", "card", "detail")
-                table.fill(issues, [address if address in snapshot.cards else None for _, address, _ in issues])
+                table = Table(t("col_kind"), t("col_card"), t("col_detail"))
+                table.fill([self.issue_row(*issue) for issue in issues],
+                           [address if address in snapshot.cards else None for _, address, _ in issues])
                 yield table
-            with TabPane("历史", id="history"):
+            with TabPane(t("history"), id="history"):
                 events = self.store.history()
-                table = Table(*HISTORY_COLUMNS)
+                table = Table(*history_columns())
                 table.fill(history_rows(events), [e.get("address") if e.get("address") in snapshot.cards else None
                                                   for e in events])
                 yield table
-            with TabPane("常驻", id="always"):
+            with TabPane(t("tab_always"), id="always"):
                 always = [card for card in snapshot.cards.values() if card.always]
-                table = Table("card", "title", "summary")
+                table = Table(t("col_card"), t("col_title"), t("col_summary"))
                 table.fill([(c.address, c.title, c.summary) for c in always], [c.address for c in always])
                 yield table
+
+    @staticmethod
+    def issue_row(kind: str, address: str | None, detail: str) -> tuple:
+        """Word one of ``Snapshot.issues()``: the engine's messages pass through, ours are translated."""
+        if kind not in ("error", "warning"):
+            detail = t(f"issue_{kind}_detail", target=detail)
+        return t(f"issue_{kind}"), address, detail
 
     def status_text(self) -> Text:
         status = self.snapshot.status
         text = Text()
-        text.append("Mounts\n", style="bold")
+        text.append(f"{t('mounts')}\n", style="bold")
         for mount in status["mounts"]:
-            flags = "".join(f"  {name}" for name in ("missing", "dirty") if mount[name])
-            text.append(f"  {mount['alias']:<16} {mount['card_count']:>5} cards  precedence {mount['precedence']:<4}"
-                        f" {mount['role']:<10} {mount['path']}")
+            text.append("  " + t("mount_row", alias=mount["alias"], count=mount["card_count"],
+                                 precedence=mount["precedence"], role=mount["role"], path=mount["path"]))
+            flags = "".join(f"  {t(f'mount_{name}')}" for name in ("missing", "dirty") if mount[name])
             text.append(f"{flags}\n", style="red")
         state = status["memory_state"]
-        text.append("\nMemory\n", style="bold")
-        text.append(f"  overlay cards {state['saved_overlay_cards']} · mounted cards {state['mounted_cards']}"
-                    f" · not assigned to a slice {state['unassigned_cards']}\n")
-        stats = self.snapshot.validation["stats"]
-        text.append(f"  validation: {stats['errors']} errors, {stats['warnings']} warnings\n")
+        text.append(f"\n{t('memory')}\n", style="bold")
+        text.append("  " + t("memory_row", overlay=state["saved_overlay_cards"], mounted=state["mounted_cards"],
+                             unassigned=state["unassigned_cards"]) + "\n")
+        text.append("  " + t("validation_row", **self.snapshot.validation["stats"]) + "\n")
         pending = self.store.pending()
-        text.append(f"\nPending review ({len(pending)})\n", style="bold")
+        text.append(f"\n{t('pending', count=len(pending))}\n", style="bold")
         for item in pending:
             text.append(f"  {item['change']} {item['address']}", style="yellow")
-            text.append(f"  conflict: {item['conflict']}\n" if item["conflict"] else "\n", style="red")
+            text.append(f"  {t('pending_conflict', conflict=item['conflict'])}\n" if item["conflict"] else "\n", style="red")
             for change in item.get("changes", []):
-                text.append(f"    reason: {change.get('reason', '')}\n", style="dim")
+                text.append(f"    {t('pending_reason', reason=change.get('reason', ''))}\n", style="dim")
             for line in item["diff"].splitlines():
                 style = "green" if line.startswith("+") else "red" if line.startswith("-") else "dim"
                 text.append(f"    {line}\n", style=style)
         if not pending:
-            text.append("  nothing is waiting for approval\n", style="dim")
+            text.append(f"  {t('pending_none')}\n", style="dim")
         return text
