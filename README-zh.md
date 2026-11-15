@@ -20,10 +20,20 @@
 └──────────────┴─────────────────────────┴──────────────────────┘
 ```
 
+## 安装
+
+需要 Python 3.12+ 和 [pipx](https://pipx.pypa.io/)（或 [uv](https://docs.astral.sh/uv/)）：
+
+```sh
+pipx install mindslice-tui   # 或者：uv tool install mindslice-tui
+```
+
+MindSlice 引擎会作为依赖一并安装。
+
 ## 运行
 
 ```sh
-uv run mindslice-tui -w ~/mindslice
+mindslice-tui -w ~/mindslice
 ```
 
 工作区的定位规则与 `mindslice` 命令相同：`-w`，否则 `$MINDSLICE_WORKSPACE`，否则向上找最近的含 `mounts.toml` 的目录。
@@ -61,6 +71,8 @@ uv run mindslice-tui -w ~/mindslice
 ## 开发
 
 ```sh
+git clone https://github.com/pancerZH/MindSlice-tui.git && cd MindSlice-tui
 uv sync
+uv run mindslice-tui -w ~/mindslice
 uv run python -m unittest discover -s tests -t .
 ```

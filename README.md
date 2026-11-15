@@ -1,6 +1,6 @@
 # MindSlice-tui
 
-English | [中文](README-zh.md)
+English | [中文](https://github.com/pancerZH/MindSlice-tui/blob/main/README-zh.md)
 
 A read-only terminal UI for a [MindSlice](https://github.com/pancerZH/MindSlice) workspace: browse cards, slices and the relations between cards.
 
@@ -21,10 +21,20 @@ A read-only terminal UI for a [MindSlice](https://github.com/pancerZH/MindSlice)
 └──────────────┴─────────────────────────┴──────────────────────┘
 ```
 
+## Install
+
+With Python 3.12+ and [pipx](https://pipx.pypa.io/) (or [uv](https://docs.astral.sh/uv/)) installed:
+
+```sh
+pipx install mindslice-tui   # or: uv tool install mindslice-tui
+```
+
+The MindSlice engine comes with it as a dependency.
+
 ## Run
 
 ```sh
-uv run mindslice-tui -w ~/mindslice
+mindslice-tui -w ~/mindslice
 ```
 
 The workspace is found the same way the `mindslice` command finds it: `-w`, otherwise `$MINDSLICE_WORKSPACE`, otherwise the nearest parent directory that contains `mounts.toml`.
@@ -62,6 +72,8 @@ once the engine offers a public graph query API, only that file needs to change.
 ## Development
 
 ```sh
+git clone https://github.com/pancerZH/MindSlice-tui.git && cd MindSlice-tui
 uv sync
+uv run mindslice-tui -w ~/mindslice
 uv run python -m unittest discover -s tests -t .
 ```

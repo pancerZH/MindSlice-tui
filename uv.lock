@@ -70,7 +70,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mindslice", specifier = ">=0.1.6" },
-    { name = "textual", specifier = ">=1.0" },
+    { name = "textual", specifier = ">=8.2" },
 ]
 
 [[package]]
