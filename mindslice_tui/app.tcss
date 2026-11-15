@@ -1,14 +1,24 @@
+* {
+    scrollbar-size-vertical: 1;
+    scrollbar-color: $foreground 20%;
+    scrollbar-color-hover: $foreground 40%;
+    scrollbar-color-active: $accent;
+    scrollbar-background: $surface;
+    scrollbar-background-hover: $surface;
+    scrollbar-background-active: $surface;
+}
+
 #slices, #card, #relations {
     border: round $primary-darken-1;
     border-title-color: $text;
 }
 
-#slices:focus, #relations:focus, #card:focus-within {
+#slices:focus, #card:focus-within, #relations:focus-within {
     border: round $accent;
 }
 
 #slices {
-    width: 34;
+    width: 38;
 }
 
 #card {
@@ -17,12 +27,29 @@
 }
 
 #relations {
-    width: 44;
+    width: 46;
+}
+
+/* Names come first in the relation rows, so clipping the dim folder beats a scrollbar. */
+#relations Tree {
+    overflow-x: hidden;
+}
+
+Table DataTable {
+    height: 1fr;
 }
 
 #card-meta {
     border-bottom: solid $primary-darken-1;
     margin-bottom: 1;
+}
+
+/* Full text of the highlighted relation or table row. */
+#preview, .detail {
+    height: auto;
+    max-height: 8;
+    padding: 0 1;
+    border-top: solid $primary-darken-1;
 }
 
 Markdown {

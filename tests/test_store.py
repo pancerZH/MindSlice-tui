@@ -17,9 +17,8 @@ class StoreTest(unittest.TestCase):
         self.addCleanup(self.store.close)
         self.snapshot = self.store.load()
 
-    def relations(self, address: str) -> dict[str, list[str | None]]:
-        return {label.split(" ", 1)[1]: [target for target, _ in items]
-                for label, items in self.snapshot.relations(address)}
+    def relations(self, address: str) -> dict[str, list[str]]:
+        return {label.split(" ", 1)[1]: targets for label, targets in self.snapshot.relations(address)}
 
     def test_cards_and_mounts(self) -> None:
         self.assertEqual([m.alias for m in self.snapshot.mounts], ["@overlay", "@base"])
@@ -32,7 +31,6 @@ class StoreTest(unittest.TestCase):
     def test_links_and_dangling(self) -> None:
         alpha = self.relations("@overlay/notes/alpha")
         self.assertEqual(alpha["links out"], ["@overlay/notes/beta"])
-        self.assertEqual(alpha["dangling"], [None])
         self.assertEqual(self.snapshot.dangling("@overlay/notes/alpha")[0].raw, "missing/card")
         self.assertEqual(self.relations("@overlay/notes/beta")["backlinks"], ["@overlay/notes/alpha"])
 
@@ -47,8 +45,7 @@ class StoreTest(unittest.TestCase):
 
     def test_shadows(self) -> None:
         self.assertEqual(self.relations("@overlay/team/lead")["same path"], ["@base/team/lead"])
-        self.assertTrue(self.snapshot.is_shadowed("@base/team/lead"))
-        self.assertFalse(self.snapshot.is_shadowed("@overlay/team/lead"))
+        self.assertEqual(self.snapshot.shadowed, {"@base/team/lead"})
 
     def test_issues(self) -> None:
         issues = {(kind, address) for kind, address, _ in self.snapshot.issues()}

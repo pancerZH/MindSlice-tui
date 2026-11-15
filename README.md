@@ -7,12 +7,14 @@
 │ ▼ @overlay 27│ MindSlice engine repo   │ → links out (10)     │
 │  ▼ projects  │ @overlay/projects/      │   architecture ...   │
 │   ▼ mindslice│   mindslice             │ ← backlinks (7)      │
-│  ▼ prefs     │ tags: mindslice project │ ⇡ extends (0)        │
-│   coding ★   │ ─────────────────────── │ ⇣ extended by (0)    │
-│              │ MindSlice (github.com/  │ ⤳ supersedes (0)     │
-│              │ pancerZH/MindSlice ...) │ ⤺ superseded by (0)  │
+│  ▼ prefs     │ tags: mindslice project │ ↑ extends (0)        │
+│   coding ★   │ ─────────────────────── │ ↓ extended by (0)    │
+│              │ MindSlice (github.com/  │ ⇒ supersedes (0)     │
+│              │ pancerZH/MindSlice ...) │ ⇐ superseded by (0)  │
 │              │                         │ ≡ same path (0)      │
 │              │                         │ ✗ dangling (0)       │
+│              │                         │ ──────────────────── │
+│              │                         │ 所选邻居的标题与摘要 │
 └──────────────┴─────────────────────────┴──────────────────────┘
 ```
 
@@ -30,16 +32,17 @@ uv run mindslice-tui -w ~/mindslice
 | --- | --- |
 | `↑` `↓` | 在左侧树中移动，中间和右侧随之更新 |
 | `tab` | 在三栏之间切换 |
-| `enter` | 在关系面板中跳到所选卡片（正文里的链接可用鼠标点击） |
+| `enter` | 在关系面板中跳到所选卡片；光标停在某个邻居上时，面板下方先预览它的标题和摘要（正文里的链接可用鼠标点击） |
 | `backspace` | 回到上一张跳转前的卡片 |
 | `/` | 全文搜索（引擎的 BM25；被取代的卡片会指向它的替代者） |
 | `g` | 邻居树：从当前卡片逐层展开邻居（`space` 展开，`enter` 跳转） |
-| `o` | 概览：状态与待审变更、问题、变更历史、常驻卡片 |
+| `o` | 概览：状态与待审变更、问题、变更历史、常驻卡片；表格下方显示所选行的完整内容，`enter` 跳到该行的卡片 |
 | `h` | 当前卡片的变更历史 |
 | `r` | 重新读取工作区 |
 | `q` | 退出 |
 
-树中的标记：`★` 常驻卡片（`load = "always"`），`⚠` 解析有问题，`≡` 被更高优先级的同路径卡片遮盖，置灰加删除线表示已被取代。
+树中的标记：`★` 常驻卡片（`load = "always"`），`!` 解析有问题，`≡` 被更高优先级的同路径卡片遮盖，置灰加删除线表示已被取代。
+按 `r` 刷新时如果读取失败（例如 `mounts.toml` 正写到一半），界面保留旧内容并给出提示。
 
 ## 只读
 

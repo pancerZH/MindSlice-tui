@@ -19,10 +19,11 @@ def main() -> None:
     args = parser.parse_args()
     try:
         store = Store(args.workspace)
+        app = MindSliceApp(store)  # loads the workspace
     except MindSliceError as error:
         sys.exit(f"mindslice-tui: {error}")
     try:
-        MindSliceApp(store).run()
+        app.run()
     finally:
         store.close()
 

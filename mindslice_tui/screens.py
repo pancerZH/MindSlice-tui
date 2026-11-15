@@ -12,7 +12,7 @@ from textual.widgets.option_list import Option
 from .store import EDGE_GROUPS, Snapshot, Store
 from .widgets import Table, card_label, history_rows
 
-HISTORY_COLUMNS = ("time (UTC)", "event", "op", "card", "reason")
+HISTORY_COLUMNS = ("time", "change", "card", "reason")
 
 
 class Modal(ModalScreen[str | None]):
@@ -30,6 +30,7 @@ class SearchScreen(Modal):
     def __init__(self, store: Store) -> None:
         super().__init__()
         self.store = store
+        self.timer = None
 
     def compose(self):
         with Vertical(classes="dialog") as dialog:
@@ -39,15 +40,21 @@ class SearchScreen(Modal):
             yield Static(id="search-note")
 
     def on_input_changed(self, event: Input.Changed) -> None:
+        """Search once typing pauses, not on every keystroke."""
+        if self.timer:
+            self.timer.stop()
+        self.timer = self.set_timer(0.15, lambda: self.search(event.value))
+
+    def search(self, query: str) -> None:
         results = self.query_one(OptionList)
         results.clear_options()
         note = ""
-        if event.value.strip():
-            found = self.store.search(event.value)
+        if query.strip():
+            found = self.store.search(query)
             for hit in found["results"]:
                 text = Text.assemble((hit["title"], "bold"), "  ", (hit["address"], "cyan"),
                                      (f"  {hit['coverage']:.0%}\n", "dim"), (hit["summary"], "dim"))
-                results.add_option(Option(text, id=hit["address"]))
+                results.add_options([Option(text, id=hit["address"]), None])  # None draws a separator
             note = f"{found['total_matches']} 条结果"
             if found["unmatched_terms"]:
                 note += f" · 未匹配的词: {', '.join(found['unmatched_terms'])}"
@@ -91,12 +98,13 @@ class NeighborsScreen(Modal):
         while walker is not None:
             path.add(walker.data)
             walker = walker.parent
+        width = max(len(label) for label, _, _ in EDGE_GROUPS)
         for label, kind, direction in EDGE_GROUPS:
             for neighbor in self.snapshot.neighbors(node.data, kind, direction):
                 text = card_label(self.snapshot, neighbor, self.snapshot.cards[neighbor].title)
-                text = Text.assemble((f"{label}  ", "dim"), text)
-                if neighbor in path:
-                    node.add_leaf(text.append("  ↺", style="dim"), data=neighbor)
+                text = Text.assemble((f"{label:<{width}}  ", "dim"), text)
+                if neighbor in path:  # a leaf has no toggle arrow: pad so the columns still line up
+                    node.add_leaf(Text.assemble("  ", text, ("  ↺", "dim")), data=neighbor)
                 else:
                     node.add(text, data=neighbor)
         if not node.children:

@@ -58,13 +58,14 @@ class Edge:
 
 
 # (label, edge kind, direction) for the relation groups shown for a focus card.
+# The symbols are ones common terminal fonts have; rarer arrows render as boxes.
 EDGE_GROUPS = (
     ("→ links out", "wikilink", "out"),
     ("← backlinks", "wikilink", "in"),
-    ("⇡ extends", "extends", "out"),
-    ("⇣ extended by", "extends", "in"),
-    ("⤳ supersedes", "supersedes", "out"),
-    ("⤺ superseded by", "supersedes", "in"),
+    ("↑ extends", "extends", "out"),
+    ("↓ extended by", "extends", "in"),
+    ("⇒ supersedes", "supersedes", "out"),
+    ("⇐ superseded by", "supersedes", "in"),
 )
 
 
@@ -75,6 +76,7 @@ class Snapshot:
     cards: dict[str, Card]
     out_edges: dict[str, list[Edge]] = field(repr=False)
     in_edges: dict[str, list[Edge]] = field(repr=False)
+    shadowed: frozenset[str] = field(repr=False)  # cards hidden by a same-path card in a mount that wins
     status: dict[str, Any] = field(repr=False)
     validation: dict[str, Any] = field(repr=False)
 
@@ -94,27 +96,16 @@ class Snapshot:
         twins = (format_address(m.alias, self.cards[address].path) for m in self.mounts)
         return [twin for twin in twins if twin in self.cards and twin != address]
 
-    def is_shadowed(self, address: str) -> bool:
-        """True when a higher-precedence mount has a card at the same path."""
-        card = self.cards[address]
-        precedence = {m.alias: m.precedence for m in self.mounts}
-        return any(precedence[self.cards[twin].mount] > precedence[card.mount] for twin in self.same_path(address))
-
     def is_superseded(self, address: str) -> bool:
         return bool(self.neighbors(address, "supersedes", "in"))
 
     def is_orphan(self, address: str) -> bool:
         return not any(e.dst for e in self.out_edges.get(address, [])) and not self.in_edges.get(address)
 
-    def relations(self, address: str) -> list[tuple[str, list[tuple[str | None, str]]]]:
-        """Every relation group of a card as ``(label, [(target address or None, text)])``."""
-        def named(addresses: list[str]) -> list[tuple[str | None, str]]:
-            return [(a, self.cards[a].title) for a in addresses]
-
-        groups = [(label, named(self.neighbors(address, kind, direction))) for label, kind, direction in EDGE_GROUPS]
-        groups.append(("≡ same path", named(self.same_path(address))))
-        groups.append(("✗ dangling", [(None, f"{e.raw}  ({e.kind})") for e in self.dangling(address)]))
-        return groups
+    def relations(self, address: str) -> list[tuple[str, list[str]]]:
+        """Every relation group of a card as ``(label, [target address])``; dangling references are separate."""
+        groups = [(label, self.neighbors(address, kind, direction)) for label, kind, direction in EDGE_GROUPS]
+        return [*groups, ("≡ same path", self.same_path(address))]
 
     def issues(self) -> list[tuple[str, str | None, str]]:
         """Things worth a look, as ``(kind, card address or None, detail)``: the engine's validation
@@ -127,7 +118,7 @@ class Snapshot:
                     rows.append(("stale extends", address, f"baseline {base} has been superseded"))
             for old in self.neighbors(address, "supersedes", "out"):
                 rows.append(("supersedes", address, f"replaces {old}"))
-            if self.is_shadowed(address):
+            if address in self.shadowed:
                 rows.append(("shadowed", address, "a higher-precedence mount has the same path"))
             if self.is_orphan(address) and not card.always:
                 rows.append(("orphan", address, "no links in or out"))
@@ -151,8 +142,8 @@ class Store:
                 mounts.append(Mount(m.alias, m.path, m.precedence, m.role, m.kind, manifest.version, manifest.description))
             reads = {format_address(r[0], r[1]): r[2]
                      for r in ws.index.conn.execute("SELECT mount, path, read_count FROM telemetry")}
-            cards = {}
-            for row in ws.index.all_cards():
+            cards, winners = {}, {}
+            for row in ws.index.all_cards():  # highest precedence first: the first card at a path wins it
                 address = format_address(row["mount"], row["path"])
                 cards[address] = Card(
                     address=address, mount=row["mount"], path=row["path"], title=row["title"], summary=row["summary"],
@@ -161,6 +152,7 @@ class Store:
                     problems=tuple(json.loads(row["errors"]) + json.loads(row["warnings"])),
                     file=roots[row["mount"]].root / f"{row['path']}.md", read_count=reads.get(address, 0),
                 )
+                winners.setdefault(row["path"], address)
             out_edges, in_edges = defaultdict(list), defaultdict(list)
             links = ws.index.conn.execute(
                 "SELECT src_mount, src_path, kind, raw, dst_mount, dst_path, resolved FROM links"
@@ -174,7 +166,8 @@ class Store:
                 out_edges[src].append(edge)
                 if dst:
                     in_edges[dst].append(edge)
-        return Snapshot(ws.root, tuple(mounts), cards, dict(out_edges), dict(in_edges), ws.status(), ws.validate())
+        return Snapshot(ws.root, tuple(mounts), cards, dict(out_edges), dict(in_edges),
+                        frozenset(cards.keys() - winners.values()), ws.status(), ws.validate())
 
     def markdown(self, snapshot: Snapshot, address: str) -> str:
         """The card's summary and body, with resolved ``[[links]]`` turned into Markdown links to addresses."""
