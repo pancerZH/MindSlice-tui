@@ -1,4 +1,4 @@
-"""Browse a MindSlice workspace in the terminal, read-only."""
+"""Browse a MindSlice workspace in the terminal; review staged changes and bake slices."""
 
 from __future__ import annotations
 

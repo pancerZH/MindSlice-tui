@@ -23,6 +23,11 @@ class CardChosen(Message):
         self.jump = jump
 
 
+def home_short(path: str | Path) -> str:
+    """``path`` with the home directory written as ``~``."""
+    return str(path).replace(str(Path.home()), "~", 1)
+
+
 def card_label(snapshot: Snapshot, address: str, text: str) -> Text:
     """``text`` with the card's markers: ★ always-loaded, ! problems, ≡ shadowed, struck out when superseded."""
     card = snapshot.cards[address]
@@ -103,8 +108,7 @@ class CardView(VerticalScroll):
         if card.aliases:
             meta.append("\n" + t("aliases", aliases=", ".join(card.aliases)), style="dim")
         modified = datetime.fromtimestamp(card.mtime_ns / 1e9).strftime("%Y-%m-%d %H:%M")
-        file = str(card.file).replace(str(Path.home()), "~", 1)
-        meta.append(f"\n{t('modified', time=modified, count=card.read_count)}\n{file}", style="dim")
+        meta.append(f"\n{t('modified', time=modified, count=card.read_count)}\n{home_short(card.file)}", style="dim")
         for problem in card.problems:
             meta.append(f"\n! {problem}", style="red")
         self.query_one("#card-meta", Static).update(meta)
@@ -189,6 +193,14 @@ class Table(Vertical):
     @staticmethod
     def address_of(event: DataTable.RowSelected) -> str | None:
         return (event.row_key.value or "").partition("\t")[2] or None
+
+
+def diff_text(diff: str, indent: str = "") -> Text:
+    """A unified diff coloured line by line: additions green, removals red, the rest dim."""
+    text = Text()
+    for line in diff.splitlines():
+        text.append(f"{indent}{line}\n", style="green" if line.startswith("+") else "red" if line.startswith("-") else "dim")
+    return text
 
 
 def history_rows(events: list[dict]) -> list[tuple]:

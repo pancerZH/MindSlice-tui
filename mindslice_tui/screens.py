@@ -12,7 +12,7 @@ from textual.widgets.option_list import Option
 
 from .i18n import t
 from .store import EDGE_GROUPS, Snapshot, Store
-from .widgets import Table, card_label, history_rows
+from .widgets import Table, card_label, diff_text, history_rows
 
 
 def history_columns() -> list[str]:
@@ -187,16 +187,14 @@ class OverviewScreen(Modal):
         text.append("  " + t("memory_row", overlay=state["saved_overlay_cards"], mounted=state["mounted_cards"],
                              unassigned=state["unassigned_cards"]) + "\n")
         text.append("  " + t("validation_row", **self.snapshot.validation["stats"]) + "\n")
-        pending = self.store.pending()
+        pending = self.store.staged()["items"]
         text.append(f"\n{t('pending', count=len(pending))}\n", style="bold")
         for item in pending:
             text.append(f"  {item['change']} {item['address']}", style="yellow")
             text.append(f"  {t('pending_conflict', conflict=item['conflict'])}\n" if item["conflict"] else "\n", style="red")
             for change in item.get("changes", []):
                 text.append(f"    {t('pending_reason', reason=change.get('reason', ''))}\n", style="dim")
-            for line in item["diff"].splitlines():
-                style = "green" if line.startswith("+") else "red" if line.startswith("-") else "dim"
-                text.append(f"    {line}\n", style=style)
+            text.append(diff_text(item["diff"], indent="    "))
         if not pending:
             text.append(f"  {t('pending_none')}\n", style="dim")
         return text

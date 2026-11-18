@@ -3,12 +3,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mindslice import Workspace
 from textual.widgets import Markdown, TabbedContent
 
 from mindslice_tui import i18n
 from mindslice_tui.app import MindSliceApp
+from mindslice_tui.review import BakeScreen, ConfirmScreen, DestinationScreen, ReviewScreen
 from mindslice_tui.screens import HistoryScreen, NeighborsScreen, OverviewScreen, SearchScreen
 from mindslice_tui.store import Store
+from textual.widgets import OptionList
 from mindslice_tui.widgets import SliceTree, Table
 
 from tests.fixture import build, memory_digest
@@ -201,6 +204,9 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
             await pilot.press("o")
             await pilot.pause()
             self.assertIn("待审变更（1）", screen_text(self.app))
+            await pilot.press("escape", "a")
+            await pilot.pause()
+            self.assertIn("接受 0 · 拒绝 0 · 保持待审 1", screen_text(self.app))
             await pilot.press("escape", "l")
             await pilot.pause()
             self.assertIn("Search", screen_text(self.app))
@@ -209,10 +215,160 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         before = memory_digest(self.root)
         async with self.run_app() as pilot:
             for keys in (["down", "down"], ["slash", *"rule"], ["escape"], ["g", "escape"], ["o", "escape"],
-                         ["h", "escape"], ["r"]):
+                         ["h", "escape"], ["r"],
+                         ["a", "space", "a", "escape", "escape"],  # review: ticked and asked, then declined
+                         ["b", "space", "tab", *"notes", "enter", "b", "escape"],  # bake: blocked plan, closed
+                         ["b", *["down"] * 7, "space", "b", "escape", "escape"]):  # bake: ready plan, declined
                 await pilot.press(*keys)
                 await pilot.pause()
         self.assertEqual(memory_digest(self.root), before)
+
+    def notes(self) -> list[str]:
+        return [note.message for note in self.app._notifications]
+
+    async def test_review_accepts_a_ticked_change(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            self.assertIn("Review (1)", screen_text(self.app))  # the footer counts staged changes
+            await pilot.press("a")
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, ReviewScreen)
+            text = screen_text(self.app)
+            self.assertIn("reason: fixture: staged", text)
+            self.assertIn("+- A staged statement.", text)
+            await pilot.press("a")  # nothing ticked yet: nothing to apply
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, ReviewScreen)
+            self.assertIn("Mark changes with space or x first", self.notes())
+            await pilot.press("space", "a")
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, ConfirmScreen)
+            self.assertIn("Accept 1 and reject 0 staged change(s)? 0 stay pending.", screen_text(self.app))
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertNotIsInstance(self.app.screen, (ReviewScreen, ConfirmScreen))
+            self.assertIn("Accepted 1, rejected 0", self.notes())
+        self.assertEqual(self.store.staged()["items"], [])
+        self.assertIn("A staged statement.", (self.root / "overlay/notes/beta.md").read_text(encoding="utf-8"))
+
+    async def test_review_rejects_a_change(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("a", "x", "a", "enter")
+            await pilot.pause()
+            self.assertIn("Accepted 0, rejected 1", self.notes())
+            self.assertNotIn("Review (1)", screen_text(self.app))
+        self.assertEqual(self.store.staged()["items"], [])
+        self.assertNotIn("A staged statement.", (self.root / "overlay/notes/beta.md").read_text(encoding="utf-8"))
+
+    async def test_review_refuses_to_accept_a_conflict(self) -> None:
+        beta = self.root / "overlay/notes/beta.md"
+        beta.write_text(beta.read_text(encoding="utf-8") + "- Changed outside.\n", encoding="utf-8")
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("a", "space")
+            await pilot.pause()
+            self.assertIn("conflicts with the live card", self.notes()[-1])
+            self.assertEqual(self.app.screen.marks, {})
+            await pilot.press("x")  # rejecting it is fine
+            await pilot.pause()
+            self.assertEqual(self.app.screen.marks, {"notes/beta": "reject"})
+
+    async def test_review_reloads_when_staging_changes_meanwhile(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("a", "space")
+            await pilot.pause()
+            with Workspace(self.root) as ws:
+                ws.write("notes/lone", op="append", content=["- Staged later."], stage=True, reason="later")
+            await pilot.press("a")
+            await pilot.pause()
+            screen = self.app.screen
+            self.assertIsInstance(screen, ReviewScreen)  # nothing was asked or executed
+            self.assertIn("The workspace changed meanwhile", self.notes()[-1])
+            self.assertEqual(list(screen.items), ["notes/beta", "notes/lone"])
+            self.assertEqual(screen.marks, {"notes/beta": "accept"})  # unchanged, so still ticked
+            await pilot.press("a", "enter")
+            await pilot.pause()
+        self.assertEqual([item["id"] for item in self.store.staged()["items"]], ["notes/lone"])
+
+    async def test_bake_a_ticked_card_into_a_new_slice(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("b")
+            await pilot.pause()
+            screen = self.app.screen
+            self.assertIsInstance(screen, BakeScreen)
+            self.assertIn("Nothing chosen: every card stays in overlay", screen_text(self.app))
+            await pilot.press("down", "down", "down")  # alpha, beta, ext, lone
+            await pilot.press("space")  # lone has no destination yet: space asks for one
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, DestinationScreen)
+            await pilot.press("tab", *"notes", "enter")
+            await pilot.pause()
+            self.assertEqual((screen.ticked, screen.dest["notes/lone"]), ({"notes/lone"}, "@notes"))
+            self.assertEqual(screen.current(), "notes/lone")  # the cursor stays on the row
+            self.assertIn("@notes  new slice v0.1.0 · 1 card(s)", screen_text(self.app))
+            await pilot.press("b")
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, ConfirmScreen)
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIn("Baked @notes v0.1.0", self.notes())
+            self.assertIn("@notes/notes/lone", self.app.snapshot.cards)
+            self.assertNotIn("@overlay/notes/lone", self.app.snapshot.cards)
+            self.assertIn("@overlay/notes/alpha", self.app.snapshot.cards)  # unticked cards stay in overlay
+        self.assertEqual(len(self.store.staged()["items"]), 1)  # staging is untouched
+
+    async def test_bake_suggests_a_destination(self) -> None:
+        with Workspace(self.root) as ws:  # a new card in a folder only @base has
+            ws.write("team/oncall", title="On call", summary="Who is on call.", content="- Linus.", stage=False,
+                     reason="test")
+        self.app.snapshot = self.store.load()
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("b")
+            await pilot.pause()
+            screen = self.app.screen
+            self.assertEqual(screen.suggested["team/oncall"], ("@base", "path"))
+            self.assertEqual(screen.suggested["notes/lone"], (None, None))  # nothing points anywhere
+            self.assertEqual(screen.suggested["team/lead"], ("@base", "related"))  # the engine's relation comes first
+            self.assertIn("@base  same folder", screen_text(self.app))
+            await pilot.press(*["down"] * 8, "space")  # team/oncall: space ticks it straight away
+            await pilot.pause()
+            self.assertEqual(screen.ticked, {"team/oncall"})
+            await pilot.press("d")  # the picker lists the slices with what speaks for each
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, DestinationScreen)
+            self.assertIsInstance(self.app.screen.focused, OptionList)
+            self.assertIn("@base  1 shared folder(s)", screen_text(self.app))
+            await pilot.press("escape", "up", "d", "tab", *"@notes", "enter")  # team/lead: a new slice
+            await pilot.pause()
+            self.assertEqual(screen.dest["team/lead"], "@notes")
+            self.assertNotIn("@notes  related", screen_text(self.app))  # no longer the suggested slice
+            await pilot.press("down", "d")  # a new slice chosen meanwhile is offered for the next card too
+            await pilot.pause()
+            self.assertIn("@notes  new slice", screen_text(self.app))
+
+    async def test_bake_shows_blockers_and_refuses(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("b", "space", "tab", *"notes", "enter")  # alpha links to beta, which stays in overlay
+            await pilot.pause()
+            text = screen_text(self.app)
+            self.assertEqual(text.count("blocked:"), 2)  # one line per problem, though the engine reports each twice
+            self.assertIn("referenced overlay card needs a destination (notes/beta)", text)
+            await pilot.press("b")
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, BakeScreen)
+            self.assertIn("Resolve the blocked items first", self.notes()[-1])
+            await pilot.press("space")  # untick: the plan is empty again
+            await pilot.pause()
+            self.assertNotIn("blocked:", screen_text(self.app))
+            await pilot.press(*["down"] * 7, "space")  # team/lead has one related slice: space ticks it at once
+            await pilot.pause()
+            self.assertEqual(self.app.screen.ticked, {"team/lead"})
+            self.assertIn("@base  new version v0.1.0 · 1 card(s)", screen_text(self.app))
 
 
 if __name__ == "__main__":

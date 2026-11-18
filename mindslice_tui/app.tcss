@@ -76,3 +76,42 @@ ModalScreen {
 #search-note {
     color: $text-muted;
 }
+
+/* Review and bake: the list beside the highlighted change, the outcome under both. */
+.checklist {
+    height: 1fr;
+}
+
+.checklist DataTable {
+    width: 3fr;
+    height: 1fr;
+}
+
+.checklist VerticalScroll {
+    width: 2fr;
+    padding: 0 1;
+    border-left: solid $primary-darken-1;
+}
+
+#outcome {
+    height: auto;
+    max-height: 10;
+    padding: 0 1;
+    border-top: solid $primary-darken-1;
+}
+
+/* Small boxes over a checklist: a yes/no question, a destination prompt. */
+.prompt {
+    width: 72;
+    height: auto;
+    border: round $warning;
+    background: $surface;
+    padding: 1 2;
+}
+
+.prompt OptionList {
+    height: auto;
+    max-height: 12;
+    border: none;
+    margin-bottom: 1;
+}

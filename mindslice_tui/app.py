@@ -11,6 +11,7 @@ from mindslice import MindSliceError
 
 from . import i18n
 from .i18n import t
+from .review import BakeScreen, ReviewScreen
 from .screens import HistoryScreen, NeighborsScreen, OverviewScreen, SearchScreen
 from .store import Store
 from .widgets import CardChosen, CardView, RelationsPanel, SliceTree
@@ -21,7 +22,8 @@ class MindSliceApp(App):
     TITLE = "MindSlice"
     # (key, action, key shown in the footer). The label is t(action), set in relabel().
     KEYS = (("slash", "search", "/"), ("g", "neighbors", None), ("o", "overview", None), ("h", "history", None),
-            ("r", "refresh", None), ("backspace", "back", None), ("l", "language", None), ("q", "quit", None))
+            ("a", "review", None), ("b", "bake", None), ("r", "refresh", None), ("backspace", "back", None),
+            ("l", "language", None), ("q", "quit", None))
 
     def __init__(self, store: Store) -> None:
         super().__init__()
@@ -45,10 +47,12 @@ class MindSliceApp(App):
         self.show(tree.first_card(), remember=False)
 
     def relabel(self) -> None:
-        """Put the current language on the key hints and pane titles."""
+        """Put the current language, and the number of staged changes, on the key hints and pane titles."""
+        pending = len(self.snapshot.status["pending_review"]["files"])
         for key, action, display in self.KEYS:
+            label = t(action) + (f" ({pending})" if action == "review" and pending else "")
             # Textual cannot relabel a binding, so swap it where the footer reads bindings from.
-            self._bindings.key_to_bindings[key] = [Binding(key, action, t(action), key_display=display)]
+            self._bindings.key_to_bindings[key] = [Binding(key, action, label, key_display=display)]
         self.refresh_bindings()
         for pane in ("slices", "card", "relations"):
             self.query_one(f"#{pane}").border_title = t(pane)
@@ -89,19 +93,25 @@ class MindSliceApp(App):
                 self.show(address, remember=False)
                 return
 
-    def action_refresh(self) -> None:
+    def reload(self) -> bool:
+        """Load the workspace again and redraw. On failure keep the old snapshot, say why and return False."""
         try:
             self.snapshot = self.store.load()
         except MindSliceError as error:
             self.notify(str(error), title=t("refresh_failed"), severity="error", markup=False)
-            return
+            return False
         tree = self.query_one(SliceTree)
         tree.load(self.snapshot)
-        # The focus card may be gone (deleted or renamed outside); fall back to the first one.
+        self.relabel()
+        # The focus card may be gone (deleted, baked or renamed); fall back to the first one.
         address = self.address if self.address in self.snapshot.cards else tree.first_card()
         self.address = None
         self.show(address, remember=False)
-        self.notify(t("card_count", count=len(self.snapshot.cards)), title=t("refreshed"))
+        return True
+
+    def action_refresh(self) -> None:
+        if self.reload():
+            self.notify(t("card_count", count=len(self.snapshot.cards)), title=t("refreshed"))
 
     def action_search(self) -> None:
         self.push_screen(SearchScreen(self.store), self.open)
@@ -116,3 +126,18 @@ class MindSliceApp(App):
     def action_history(self) -> None:
         if self.address:
             self.push_screen(HistoryScreen(self.store, self.address), self.open)
+
+    def action_review(self) -> None:
+        self.open_checklist(lambda: ReviewScreen(self.store))
+
+    def action_bake(self) -> None:
+        self.open_checklist(lambda: BakeScreen(self.store, self.snapshot))
+
+    def open_checklist(self, make) -> None:
+        """Open a screen that reads the workspace as it is built, which can fail like a reload."""
+        try:
+            screen = make()
+        except MindSliceError as error:
+            self.notify(str(error), title=t("failed"), severity="error", markup=False)
+            return
+        self.push_screen(screen)

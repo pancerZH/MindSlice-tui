@@ -1,15 +1,17 @@
-"""Read-only access to a MindSlice workspace. The only module that touches the engine.
+"""Access to a MindSlice workspace. The only module that touches the engine.
 
 ``Store.load()`` returns an immutable ``Snapshot`` of every card and edge; the UI renders
-from it. Nothing here writes memory: no write/apply/discard/mount/bake, and no
-``Workspace.read()`` (which would bump read telemetry). ``ws.index`` and ``ws._reading``
-are engine internals; if the engine grows a public graph API, only this file changes.
+from it. Browsing writes no memory, and never calls ``Workspace.read()`` (which would bump
+read telemetry). Only ``review()`` and ``bake()`` change memory, and the UI calls them only
+after the user has ticked the changes and confirmed. ``ws.index`` and ``ws._reading`` are
+engine internals; if the engine grows a public graph API, only this file changes.
 """
 
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+import os
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -56,6 +58,9 @@ class Edge:
     raw: str  # the reference as written in the card
     dst: str | None  # None when the reference does not resolve
 
+
+# What ranks a slice as the destination of a new card, strongest first (see Store.destinations).
+SIGNALS = ("path", "links", "search")
 
 # (name, edge kind, direction) of the relation groups shown for a focus card. The UI words them (i18n.py).
 EDGE_GROUPS = (
@@ -186,10 +191,63 @@ class Store:
     def search(self, query: str, k: int = 30) -> dict[str, Any]:
         return self.ws.search(query, k=k, max_neighbors=0)
 
+    def destinations(self, snapshot: Snapshot, card: dict[str, Any]) -> list[tuple[str, tuple[int, int, float]]]:
+        """The mounted slices ranked as the destination of an overlay ``card`` (a bake plan entry), best first,
+        each with its scores for ``SIGNALS``: how many folders of the card's path its deepest card shares,
+        how many of the card's links and backlinks lead into it, and its search hits for the card's title and
+        summary, weighted by rank. Folders outweigh links, links outweigh search hits. Folders count only
+        when a single slice goes deepest: a folder several slices have (``projects/``) tells them apart no
+        better than none."""
+        slices = [m.alias for m in snapshot.mounts if m.kind != "overlay"]
+        folders = card["id"].split("/")[:-1]
+        path = dict.fromkeys(slices, 0)
+        for other in snapshot.cards.values():
+            if other.mount in path and other.address != card["address"]:
+                shared = len(os.path.commonprefix([folders, other.path.split("/")[:-1]]))
+                path[other.mount] = max(path[other.mount], shared)
+        if list(path.values()).count(max(path.values(), default=0)) > 1:
+            path = dict.fromkeys(slices, 0)
+        neighbors = [e.dst for e in snapshot.out_edges.get(card["address"], []) if e.dst]
+        neighbors += [e.src for e in snapshot.in_edges.get(card["address"], [])]
+        links = Counter(snapshot.cards[a].mount for a in neighbors if a in snapshot.cards)
+        text = f"{card.get('title') or ''} {card['summary']}".strip()
+        hits = [hit for hit in self.search(text, k=10)["results"] if hit["address"] != card["address"]] if text else []
+        search = Counter()
+        for rank, hit in enumerate(hits, 1):  # the best hits count most, so a big slice's many weak hits do not win
+            search[hit["address"].partition("/")[0]] += 1 / rank
+        scores = {alias: (path[alias], links[alias], search[alias]) for alias in slices}
+        return sorted(scores.items(), key=lambda item: item[1], reverse=True)  # stable: ties keep mount order
+
     def history(self, address: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         """Recorded change events, newest first, for one card or the whole workspace."""
         return self.ws.card_history(address, limit=limit)["events"]
 
-    def pending(self) -> list[dict[str, Any]]:
-        """Staged changes awaiting approval, each with a unified ``diff``."""
-        return self.ws.diff("staging")["items"]
+    def staged(self) -> dict[str, Any]:
+        """Staged changes awaiting approval: ``items`` (each with a unified ``diff``) and the ``revision``
+        a review is checked against."""
+        return self.ws.diff("staging")
+
+    def review(self, accept: list[str], reject: list[str], revision: str, dry_run: bool = False) -> dict[str, Any]:
+        """Accept and reject staged changes (by staging id) in one batch; the others stay pending.
+        ``dry_run`` only reports ``conflicts``. Raises ``ApplyConflictError`` if staging changed since ``revision``."""
+        return self.ws.review(accept, reject, revision=revision, dry_run=dry_run)
+
+    def plan_bake(self, assignments: dict[str, str | None]) -> dict[str, Any]:
+        """A bake plan for the overlay cards: an alias sends a card to that slice, None keeps it in overlay.
+        Writes nothing; a card left out of ``assignments`` gets the engine's own choice."""
+        return self.ws.plan_bake(assignments, resume=False)
+
+    def bake(self, plan: dict[str, Any]) -> dict[str, Any]:
+        """Execute a plan from ``plan_bake``. Raises ``BakeConflictError`` if the workspace changed since."""
+        return self.ws.bake(plan=plan)
+
+
+def suggestion(ranked: list[tuple[str, tuple[int, int, float]]]) -> tuple[str | None, str | None]:
+    """The best destination of ``Store.destinations`` and the signal that puts it ahead of the next one,
+    or ``(None, None)`` when no signal tells it apart."""
+    if not ranked:
+        return None, None
+    best = ranked[0][1]
+    runner_up = ranked[1][1] if len(ranked) > 1 else (0, 0, 0)
+    signal = next((name for name, a, b in zip(SIGNALS, best, runner_up) if a != b), None)
+    return (ranked[0][0], signal) if signal else (None, None)

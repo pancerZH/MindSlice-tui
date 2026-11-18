@@ -74,7 +74,7 @@ class StoreTest(unittest.TestCase):
     def test_search_history_pending(self) -> None:
         self.assertEqual(self.store.search("zebras")["results"][0]["address"], "@overlay/notes/beta")
         self.assertEqual(self.store.history("@overlay/notes/lone")[0]["reason"], "fixture: notes/lone")
-        pending = self.store.pending()
+        pending = self.store.staged()["items"]
         self.assertEqual([item["address"] for item in pending], ["@overlay/notes/beta"])
         self.assertIn("+- A staged statement.", pending[0]["diff"])
 
@@ -90,7 +90,7 @@ class StoreTest(unittest.TestCase):
         snapshot.issues()
         self.store.search("rule")
         self.store.history()
-        self.store.pending()
+        self.store.staged()
         self.assertEqual((memory_digest(self.root), reads()), before)
 
 
