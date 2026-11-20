@@ -268,6 +268,15 @@ class BakeScreen(Checklist):
     def replan(self) -> None:
         """Plan with every unticked card kept in overlay. A card the plan shows for the first time gets a
         suggested destination (``suggest``), and is planned again unticked."""
+        with self.store.ws.lock.exclusive():
+            self._replan_locked()
+
+    def _replan_locked(self) -> None:
+        live = {card["id"] for card in self.store.plan_bake({})["cards"]}
+        self.ticked.intersection_update(live)
+        for key in self.dest.keys() - live:
+            del self.dest[key]
+            self.suggested.pop(key, None)
         while True:
             plan = self.store.plan_bake({key: dest if key in self.ticked else None for key, dest in self.dest.items()})
             new = {card["id"]: self.suggest(card) for card in plan["cards"] if card["id"] not in self.dest}

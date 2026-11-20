@@ -320,6 +320,19 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("@overlay/notes/alpha", self.app.snapshot.cards)  # unticked cards stay in overlay
         self.assertEqual(len(self.store.staged()["items"]), 1)  # staging is untouched
 
+    async def test_bake_refresh_removes_a_card_another_session_already_baked(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.press("b")
+            await pilot.pause()
+            screen = self.app.screen
+            screen.choose("notes/lone", True, "@notes")
+            with Workspace(self.root) as other:
+                other.bake(plan=screen.plan)
+            screen.replan()
+            self.assertNotIn("notes/lone", screen.cards)
+            self.assertNotIn("notes/lone", screen.ticked)
+            self.assertIn("notes/alpha", screen.cards)
+
     async def test_bake_suggests_a_destination(self) -> None:
         with Workspace(self.root) as ws:  # a new card in a folder only @base has
             ws.write("team/oncall", title="On call", summary="Who is on call.", content="- Linus.", stage=False,
