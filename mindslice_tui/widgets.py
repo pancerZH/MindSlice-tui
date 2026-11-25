@@ -28,17 +28,33 @@ def home_short(path: str | Path) -> str:
     return str(path).replace(str(Path.home()), "~", 1)
 
 
+PENDING_MARKS = {"create": "+", "modify": "~", "delete": "−"}
+
+
 def card_label(snapshot: Snapshot, address: str, text: str) -> Text:
-    """``text`` with the card's markers: ★ always-loaded, ! problems, ≡ shadowed, struck out when superseded."""
-    card = snapshot.cards[address]
-    label = Text(text, style="dim strike" if snapshot.is_superseded(address) else "")
-    if card.always:
+    """``text`` with the card's markers: ★ always-loaded, ! problems, ≡ shadowed, struck out when superseded,
+    and a yellow + ~ − when a change to it is staged (a staged create, not live yet, is in italics)."""
+    card, pending = snapshot.cards.get(address), snapshot.pending.get(address)
+    label = Text(text, style="dim strike" if snapshot.is_superseded(address) else "" if card else "italic")
+    if card.always if card else pending["always"]:
         label.append(" ★", style="yellow")
-    if card.problems:
+    if card and card.problems:
         label.append(" !", style="bold red")
     if address in snapshot.shadowed:
         label.append(" ≡", style="dim")
+    if pending:
+        label.append(f" {PENDING_MARKS[pending['change']]}", style="bold yellow")
     return label
+
+
+def pending_text(item: dict) -> Text:
+    """A staged change to the focus card: what it is, why, and its diff."""
+    text = Text(f"\n\n{t('pending_card', change=t(f'change_{item['change']}'))}\n", style="bold yellow")
+    for change in item.get("changes", []):
+        text.append(t("pending_reason", reason=change.get("reason") or "") + "\n", style="dim")
+    if item["conflict"]:
+        text.append(t("pending_conflict", conflict=item["conflict"]) + "\n", style="red")
+    return text.append(diff_text(item["diff"]))
 
 
 class SliceTree(Tree[str]):
@@ -57,16 +73,20 @@ class SliceTree(Tree[str]):
             cards = [card for card in snapshot.cards.values() if card.mount == mount.alias]
             label = Text.assemble((mount.alias, "bold"), (f" {mount.version}".rstrip() + f"  {len(cards)}", "dim"))
             self.nodes[mount.alias] = self.root.add(label, expand=True)
-            for card in sorted(cards, key=lambda card: card.path.split("/")):
+            # Staged creates sit where they will appear once accepted.
+            paths = {card.path: card.address for card in cards}
+            paths.update({address.partition("/")[2]: address for address in snapshot.pending
+                          if address not in snapshot.cards and address.partition("/")[0] == mount.alias})
+            for path, address in sorted(paths.items(), key=lambda item: item[0].split("/")):
                 node, prefix = self.nodes[mount.alias], mount.alias
-                for part in card.path.split("/"):
+                for part in path.split("/"):
                     prefix = f"{prefix}/{part}"  # for the last part this is the card's address
                     if prefix not in self.nodes:
                         node.allow_expand = True
                         self.nodes[prefix] = node.add(Text(part), expand=True, allow_expand=False)
                     node = self.nodes[prefix]
-                node.data = card.address
-                node.set_label(card_label(snapshot, card.address, card.path.rsplit("/", 1)[-1]))
+                node.data = address
+                node.set_label(card_label(snapshot, address, path.rsplit("/", 1)[-1]))
 
     def first_card(self) -> str | None:
         return next((node.data for node in self.nodes.values() if node.data), None)
@@ -95,7 +115,15 @@ class CardView(VerticalScroll):
         yield Markdown(open_links=False)
 
     def show(self, snapshot: Snapshot, address: str, markdown: str | None) -> None:
-        card = snapshot.cards[address]
+        card, pending = snapshot.cards.get(address), snapshot.pending.get(address)
+        if card is None:  # a staged create: all there is to show is the change
+            meta = Text.assemble((pending["title"] or address, "bold"), "\n", (address, "cyan"))
+            if pending["always"]:
+                meta.append(f"  ★ {t('always_loaded')}", style="yellow")
+            self.query_one("#card-meta", Static).update(meta.append(pending_text(pending)))
+            self.query_one(Markdown).update("")
+            self.scroll_home(animate=False)
+            return
         meta = Text.assemble((card.title, "bold"), "\n", (address, "cyan"))
         if card.always:
             meta.append(f"  ★ {t('always_loaded')}", style="yellow")
@@ -111,6 +139,8 @@ class CardView(VerticalScroll):
         meta.append(f"\n{t('modified', time=modified, count=card.read_count)}\n{home_short(card.file)}", style="dim")
         for problem in card.problems:
             meta.append(f"\n! {problem}", style="red")
+        if pending:
+            meta.append(pending_text(pending))
         self.query_one("#card-meta", Static).update(meta)
         self.query_one(Markdown).update(t("file_gone") if markdown is None else markdown)
         self.scroll_home(animate=False)
@@ -143,7 +173,7 @@ class RelationsPanel(Vertical):
             return tree.root.add(Text(f"{t(name)} ({count})", style="bold" if count else "dim"),
                                  expand=True, allow_expand=bool(count))
 
-        here = snapshot.cards[address].mount
+        here = address.partition("/")[0]
         for name, targets in snapshot.relations(address):
             node = group(name, len(targets))
             for target in targets:

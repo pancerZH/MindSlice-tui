@@ -160,13 +160,13 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
     async def test_focus_card_deleted_outside(self) -> None:
         async with self.run_app() as pilot:
             await pilot.pause()
-            self.app.show(BETA)  # trail: alpha
+            self.app.show("@overlay/notes/lone")  # trail: alpha
             await pilot.pause()
-            (self.root / "overlay" / "notes" / "beta.md").unlink()
+            (self.root / "overlay" / "notes" / "lone.md").unlink()
             await pilot.press("r")
             await pilot.pause()
             self.assertEqual(self.app.address, ALPHA)  # fell back to the first card
-            self.assertNotIn("Beta summary.", screen_text(self.app))
+            self.assertNotIn("Lone summary.", screen_text(self.app))
             await pilot.press("backspace", "backspace")  # nothing sensible to go back to: no crash
             await pilot.pause()
             self.assertEqual((self.app.address, self.app.trail), (ALPHA, []))
@@ -250,6 +250,45 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("Accepted 1, rejected 0", self.notes())
         self.assertEqual(self.store.staged()["items"], [])
         self.assertIn("A staged statement.", (self.root / "overlay/notes/beta.md").read_text(encoding="utf-8"))
+
+    async def test_staged_changes_show_in_tree_and_card(self) -> None:
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            text = screen_text(self.app)
+            self.assertIn("beta ~", text)  # the tree marks the card with a staged change
+            self.assertIn("● Staged change: modify · press a to review", text)
+            self.assertIn("+- A staged statement.", text)
+            self.assertIn("reason: fixture: staged", text)
+
+    async def test_staged_create_sits_in_the_tree_and_opens_the_review_on_it(self) -> None:
+        with Workspace(self.root) as ws:
+            ws.write("prefs/tone", title="Reply tone", summary="Be brief.", content="- Short answers.",
+                     load="always", stage=True, reason="fixture: staged create")
+        self.app = MindSliceApp(self.store)
+        tone = "@overlay/prefs/tone"
+        async with self.run_app() as pilot:
+            await pilot.pause()
+            self.assertIn("Review (2)", screen_text(self.app))
+            self.app.query_one(SliceTree).reveal(tone)
+            await pilot.pause()
+            self.assertEqual(self.app.address, tone)
+            text = screen_text(self.app)
+            self.assertIn("tone ★ +", text)
+            self.assertIn("Reply tone", text)
+            self.assertIn("● Staged change: new card", text)
+            self.assertIn("+- Short answers.", text)
+            await pilot.press("a")
+            await pilot.pause()
+            screen = self.app.screen
+            self.assertIsInstance(screen, ReviewScreen)
+            self.assertEqual(screen.current(), "prefs/tone")  # the focus card's change is highlighted
+            await pilot.press("space", "a", "enter")
+            await pilot.pause()
+            self.assertIn(tone, self.app.snapshot.cards)
+            self.assertNotIn(tone, self.app.snapshot.pending)
+            self.assertEqual(self.app.address, tone)
 
     async def test_review_rejects_a_change(self) -> None:
         async with self.run_app() as pilot:

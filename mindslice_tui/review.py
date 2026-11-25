@@ -137,8 +137,9 @@ class ReviewScreen(Checklist):
     COLUMNS = ("col_mark", "col_change", "col_card")
     HINT = "review_hint"
 
-    def __init__(self, store: Store) -> None:
+    def __init__(self, store: Store, focus: str | None = None) -> None:
         super().__init__(store)
+        self.focus = focus  # the card the main screen shows: its change, if any, is highlighted first
         self.items: dict[str, dict] = {}
         self.marks: dict[str, str] = {}  # staging id -> "accept" | "reject"; an unmarked change stays pending
         self.blocked: list[dict] = []  # conflicts found by the last check
@@ -150,6 +151,12 @@ class ReviewScreen(Checklist):
         self.revision = staged["revision"]
         # A mark survives a reload only for a change that is still exactly as it was.
         self.marks = {key: mark for key, mark in self.marks.items() if self.items.get(key) == old.get(key)}
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        addresses = [item["address"] for item in self.items.values()]
+        if self.focus in addresses:
+            self.query_one(DataTable).move_cursor(row=addresses.index(self.focus))
 
     def chosen(self, mark: str) -> list[str]:
         return [key for key, value in self.marks.items() if value == mark]

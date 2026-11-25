@@ -66,14 +66,15 @@ class MindSliceApp(App):
     def show(self, address: str | None, jump: bool = True, remember: bool = True) -> None:
         """Make ``address`` the focus card. A jump moves the tree cursor and, unless told otherwise,
         remembers the previous focus card for 'back'."""
-        if address not in self.snapshot.cards or address == self.address:
+        if not self.snapshot.has(address) or address == self.address:
             return
         if jump:
             if remember and self.address:
                 self.trail.append(self.address)
             self.query_one(SliceTree).reveal(address)
         self.address = address
-        self.query_one(CardView).show(self.snapshot, address, self.store.markdown(self.snapshot, address))
+        markdown = self.store.markdown(self.snapshot, address) if address in self.snapshot.cards else ""
+        self.query_one(CardView).show(self.snapshot, address, markdown)
         self.query_one(RelationsPanel).show(self.snapshot, address)
 
     def on_card_chosen(self, event: CardChosen) -> None:
@@ -82,14 +83,14 @@ class MindSliceApp(App):
     def open(self, address: str | None) -> None:
         """Jump to a card picked in a modal. Search sees the live workspace, so the card may be newer
         than the snapshot: reload first in that case."""
-        if address and address not in self.snapshot.cards:
+        if address and not self.snapshot.has(address):
             self.action_refresh()
         self.show(address)
 
     def action_back(self) -> None:
         while self.trail:
             address = self.trail.pop()
-            if address in self.snapshot.cards and address != self.address:
+            if self.snapshot.has(address) and address != self.address:
                 self.show(address, remember=False)
                 return
 
@@ -104,7 +105,7 @@ class MindSliceApp(App):
         tree.load(self.snapshot)
         self.relabel()
         # The focus card may be gone (deleted, baked or renamed); fall back to the first one.
-        address = self.address if self.address in self.snapshot.cards else tree.first_card()
+        address = self.address if self.snapshot.has(self.address) else tree.first_card()
         self.address = None
         self.show(address, remember=False)
         return True
@@ -120,7 +121,7 @@ class MindSliceApp(App):
         self.push_screen(OverviewScreen(self.store, self.snapshot), self.open)
 
     def action_neighbors(self) -> None:
-        if self.address:
+        if self.address in self.snapshot.cards:
             self.push_screen(NeighborsScreen(self.snapshot, self.address), self.open)
 
     def action_history(self) -> None:
@@ -128,7 +129,7 @@ class MindSliceApp(App):
             self.push_screen(HistoryScreen(self.store, self.address), self.open)
 
     def action_review(self) -> None:
-        self.open_checklist(lambda: ReviewScreen(self.store))
+        self.open_checklist(lambda: ReviewScreen(self.store, focus=self.address))
 
     def action_bake(self) -> None:
         self.open_checklist(lambda: BakeScreen(self.store, self.snapshot))

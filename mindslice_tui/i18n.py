@@ -76,6 +76,10 @@ STRINGS = {
     "pending": ("Pending review ({count})", "待审变更（{count}）"),
     "pending_none": ("nothing is waiting for approval", "没有等待批准的变更"),
     "pending_conflict": ("conflict: {conflict}", "冲突：{conflict}"),
+    "pending_card": ("● Staged change: {change} · press a to review", "● 待审变更：{change} · 按 a 审批"),
+    "change_create": ("new card", "新卡片"),
+    "change_modify": ("modify", "修改"),
+    "change_delete": ("delete", "删除"),
     "pending_reason": ("reason: {reason}", "原因：{reason}"),
     # issues: the kind, and for the ones derived from the graph a detail naming the other card
     "issue_error": ("error", "错误"),

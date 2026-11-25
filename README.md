@@ -51,7 +51,7 @@ The workspace is found the same way the `mindslice` command finds it: `-w`, othe
 | `g` | Neighbour tree: open the neighbours of the current card level by level (`space` opens a node, `enter` jumps) |
 | `o` | Overview: status and pending review, issues, change history, always-loaded cards. The full text of the selected row is shown under each table; `enter` jumps to that row's card |
 | `h` | Change history of the current card |
-| `a` | Review staged changes (the footer shows how many wait): `space` accepts, `x` rejects, an unmarked change stays pending; `a` applies the marks after a check and a confirmation |
+| `a` | Review staged changes (the footer shows how many wait; the focus card's change is highlighted first): `space` accepts, `x` rejects, an unmarked change stays pending; `a` applies the marks after a check and a confirmation |
 | `b` | Bake overlay cards into slices: each card comes with a suggested destination (see below) and `space` ticks it; `d` picks another slice from a ranked list, or a new alias after `tab`; the plan and anything blocking it update with every tick; `b` bakes after a confirmation |
 | `r` | Reload the workspace |
 | `l` | Switch the interface language (English / 中文) |
@@ -59,7 +59,7 @@ The workspace is found the same way the `mindslice` command finds it: `-w`, othe
 
 Everywhere, `enter` confirms (a choice, a destination, the final "apply" or "bake" question) and `esc` cancels or closes.
 
-Markers in the tree: `★` an always-loaded card (`load = "always"`), `!` the card has parse problems, `≡` the card is shadowed by a card at the same path in a higher-precedence mount; a dimmed, struck-out name means the card has been superseded.
+Markers in the tree: `★` an always-loaded card (`load = "always"`), `!` the card has parse problems, `≡` the card is shadowed by a card at the same path in a higher-precedence mount; a dimmed, struck-out name means the card has been superseded. A yellow `+` / `~` / `−` marks a staged change (create / modify / delete) awaiting review; a staged new card is listed, in italics, where it will appear once accepted. The card pane shows the change's reason and diff, and `a` opens the review with that change highlighted.
 If a reload with `r` fails (for example while `mounts.toml` is half written), the UI keeps what it was showing and reports the error.
 
 The interface starts in English; `--lang zh` starts it in Chinese. Only the interface's own text is translated: card content and the engine's messages are shown as they are.

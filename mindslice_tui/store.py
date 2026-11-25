@@ -83,6 +83,13 @@ class Snapshot:
     shadowed: frozenset[str] = field(repr=False)  # cards hidden by a same-path card in a mount that wins
     status: dict[str, Any] = field(repr=False)
     validation: dict[str, Any] = field(repr=False)
+    # Staged changes by card address: ``ws.diff("staging")`` items plus the staged card's ``title`` and
+    # ``always``. A staged create has no entry in ``cards``.
+    pending: dict[str, dict[str, Any]] = field(repr=False, default_factory=dict)
+
+    def has(self, address: str | None) -> bool:
+        """A live card, or a card that exists only as a staged create."""
+        return address in self.cards or address in self.pending
 
     def neighbors(self, address: str, kind: str, direction: str) -> list[str]:
         """Addresses joined to ``address`` by resolved ``kind`` edges, in card order, without repeats."""
@@ -97,7 +104,8 @@ class Snapshot:
 
     def same_path(self, address: str) -> list[str]:
         """Cards at the same path in other mounts (they shadow, or are shadowed by, this one)."""
-        twins = (format_address(m.alias, self.cards[address].path) for m in self.mounts)
+        path = address.partition("/")[2]  # also for a staged create, which has no Card
+        twins = (format_address(m.alias, path) for m in self.mounts)
         return [twin for twin in twins if twin in self.cards and twin != address]
 
     def is_superseded(self, address: str) -> bool:
@@ -172,8 +180,16 @@ class Store:
                 out_edges[src].append(edge)
                 if dst:
                     in_edges[dst].append(edge)
+        pending = {}
+        for item in self.staged()["items"]:
+            text = None if item["op"] == "delete" else read_card_file(ws.staging.file(item["id"]))[0]
+            front = parse_card(text).frontmatter if text else {}
+            live = cards.get(item["address"])
+            item["title"] = front.get("title") or (live.title if live else "")
+            item["always"] = front.get("load") == "always" if text else bool(live and live.always)
+            pending[item["address"]] = item
         return Snapshot(ws.root, tuple(mounts), cards, dict(out_edges), dict(in_edges),
-                        frozenset(cards.keys() - winners.values()), ws.status(), ws.validate())
+                        frozenset(cards.keys() - winners.values()), ws.status(), ws.validate(), pending)
 
     def markdown(self, snapshot: Snapshot, address: str) -> str | None:
         """The card's summary and body, with resolved ``[[links]]`` turned into Markdown links to addresses.
